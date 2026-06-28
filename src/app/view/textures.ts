@@ -37,10 +37,11 @@ export function getBlockMaterial(blockId: string, _fallbackColor: string): Mats 
   const atlasTex = getAtlasTexture();
 
   // Single material, UVs are baked into geometry per block.
+  const transparent = blockId.includes('glass') || blockId === 'minecraft:ice' || blockId === 'minecraft:packed_ice';
   const mat = baseMat({
     map: atlasTex,
-    transparent: blockId === 'minecraft:glass',
-    opacity: blockId === 'minecraft:glass' ? 0.55 : 1,
+    transparent,
+    opacity: transparent ? 0.62 : 1,
   });
 
   matCache.set(key, mat);
