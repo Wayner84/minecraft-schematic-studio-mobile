@@ -114,36 +114,18 @@ function textureNamesForFace(blockId: string, face: BlockFace): string[] {
 }
 
 function texturePathCandidatesForFace(blockId: string, face: BlockFace): string[] {
-  const name = blockName(blockId);
   const blockCandidates = textureNamesForFace(blockId, face).flatMap(n => [
     `assets/minecraft/textures/block/${n}.png`,
     `minecraft/textures/block/${n}.png`,
     `textures/block/${n}.png`,
   ]);
 
-  // Vanilla chests are entity textures rather than normal block textures.
-  const entityCandidates: string[] = [];
-  if (name === 'chest') {
-    entityCandidates.push(
-      'assets/minecraft/textures/entity/chest/normal.png',
-      'minecraft/textures/entity/chest/normal.png',
-      'textures/entity/chest/normal.png',
-    );
-  } else if (name === 'trapped_chest') {
-    entityCandidates.push(
-      'assets/minecraft/textures/entity/chest/trapped.png',
-      'minecraft/textures/entity/chest/trapped.png',
-      'textures/entity/chest/trapped.png',
-    );
-  } else if (name === 'ender_chest') {
-    entityCandidates.push(
-      'assets/minecraft/textures/entity/chest/ender.png',
-      'minecraft/textures/entity/chest/ender.png',
-      'textures/entity/chest/ender.png',
-    );
-  }
-
-  return [...blockCandidates, ...entityCandidates];
+  // Do not fall back to entity texture sheets here. Blocks such as chests, beds,
+  // banners and skulls are stored as larger entity layouts in vanilla packs, not as
+  // square block-face PNGs. Cropping those sheets into a 16x16 atlas tile produces
+  // the broken/transparent chest seen in the Android preview. If a pack provides a
+  // square block texture override we use it; otherwise the procedural tile remains.
+  return blockCandidates;
 }
 
 function canvasColor(input: string) {
@@ -287,17 +269,7 @@ async function drawTileFromPack(
     const bmp = await pngToBitmap(bytes);
     ctx.imageSmoothingEnabled = false;
 
-    // Entity chest sheets are not single square block textures. Crop a representative
-    // square so resource-pack chests are recognisable instead of being stretched sheets.
-    if (pngPath.includes('/textures/entity/chest/')) {
-      const sx = face === 'side' ? Math.floor(bmp.width * 0.22) : Math.floor(bmp.width * 0.12);
-      const sy = face === 'side' ? Math.floor(bmp.height * 0.22) : Math.floor(bmp.height * 0.05);
-      const sw = Math.max(1, Math.floor(bmp.width * 0.22));
-      const sh = Math.max(1, Math.floor(bmp.height * 0.22));
-      ctx.drawImage(bmp, sx, sy, sw, sh, x0, y0, size, size);
-    } else {
-      ctx.drawImage(bmp, x0, y0, size, size);
-    }
+    ctx.drawImage(bmp, x0, y0, size, size);
     return true;
   }
   return false;

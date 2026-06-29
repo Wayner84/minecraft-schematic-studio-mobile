@@ -76,8 +76,17 @@ function svgEscape(s: string) {
 
 function proceduralTextureUrl(id: string): string {
   const block = getBlockById(id);
+  const name = blockName(id);
+  const title = svgEscape(block.name);
+
+  if (name.includes('chest')) {
+    const base = name === 'ender_chest' ? '#243f3d' : name === 'trapped_chest' ? '#b8793a' : '#b38b52';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="${base}"/><path d="M0 15.5h32M4 0v32M28 0v32" stroke="rgba(55,28,8,.7)" stroke-width="2"/><path d="M3 4h26M3 28h26" stroke="rgba(255,230,150,.18)" stroke-width="1"/><rect x="13" y="13" width="6" height="5" rx="1" fill="#d9c36a"/><rect x="15" y="15" width="2" height="2" fill="rgba(40,25,10,.55)"/><path d="M2 2h28v28H2z" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2"/><title>${title}</title></svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
   const c = block.color;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="${svgEscape(c)}"/><path d="M0 8h32M0 16h32M0 24h32M8 0v32M16 0v32M24 0v32" stroke="rgba(255,255,255,.12)" stroke-width="1"/><path d="M3 5h3v3H3zM14 4h2v2h-2zM23 10h4v2h-4zM7 20h5v3H7zM20 23h2v4h-2z" fill="rgba(0,0,0,.18)"/><title>${svgEscape(block.name)}</title></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="${svgEscape(c)}"/><path d="M0 8h32M0 16h32M0 24h32M8 0v32M16 0v32M24 0v32" stroke="rgba(255,255,255,.12)" stroke-width="1"/><path d="M3 5h3v3H3zM14 4h2v2h-2zM23 10h4v2h-4zM7 20h5v3H7zM20 23h2v4h-2z" fill="rgba(0,0,0,.18)"/><title>${title}</title></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
