@@ -1,4 +1,4 @@
-export type BlockCategory = 'terrain' | 'wood' | 'stone' | 'glass' | 'colour' | 'nature' | 'utility' | 'misc';
+export type BlockCategory = 'terrain' | 'wood' | 'stone' | 'glass' | 'colour' | 'nature' | 'redstone' | 'utility' | 'misc';
 
 export type BlockDef = {
   id: string;
@@ -4883,6 +4883,114 @@ export const BLOCKS: BlockDef[] = [
     "name": "Potted Closed Eyeblossom",
     "category": "utility",
     "color": "hsl(276 42% 46%)"
+  },
+  {
+    "id": "minecraft:redstone_wire",
+    "name": "Redstone Wire",
+    "category": "redstone",
+    "color": "#c92222"
+  },
+  {
+    "id": "minecraft:redstone_torch",
+    "name": "Redstone Torch",
+    "category": "redstone",
+    "color": "#f04432"
+  },
+  {
+    "id": "minecraft:redstone_wall_torch",
+    "name": "Redstone Wall Torch",
+    "category": "redstone",
+    "color": "#f04432"
+  },
+  {
+    "id": "minecraft:lever",
+    "name": "Lever",
+    "category": "redstone",
+    "color": "#8d7551"
+  },
+  {
+    "id": "minecraft:stone_button",
+    "name": "Stone Button",
+    "category": "redstone",
+    "color": "#8b8b8b"
+  },
+  {
+    "id": "minecraft:oak_button",
+    "name": "Oak Button",
+    "category": "redstone",
+    "color": "#b38b52"
+  },
+  {
+    "id": "minecraft:stone_pressure_plate",
+    "name": "Stone Pressure Plate",
+    "category": "redstone",
+    "color": "#8b8b8b"
+  },
+  {
+    "id": "minecraft:oak_pressure_plate",
+    "name": "Oak Pressure Plate",
+    "category": "redstone",
+    "color": "#b38b52"
+  },
+  {
+    "id": "minecraft:powered_rail",
+    "name": "Powered Rail",
+    "category": "redstone",
+    "color": "#c49b37"
+  },
+  {
+    "id": "minecraft:detector_rail",
+    "name": "Detector Rail",
+    "category": "redstone",
+    "color": "#9a6a35"
+  },
+  {
+    "id": "minecraft:activator_rail",
+    "name": "Activator Rail",
+    "category": "redstone",
+    "color": "#b27c36"
+  },
+  {
+    "id": "minecraft:daylight_detector",
+    "name": "Daylight Detector",
+    "category": "redstone",
+    "color": "#c9b47b"
+  },
+  {
+    "id": "minecraft:tripwire_hook",
+    "name": "Tripwire Hook",
+    "category": "redstone",
+    "color": "#7c6a55"
+  },
+  {
+    "id": "minecraft:tripwire",
+    "name": "Tripwire",
+    "category": "redstone",
+    "color": "#d8d8d8"
+  },
+  {
+    "id": "minecraft:sculk_sensor",
+    "name": "Sculk Sensor",
+    "category": "redstone",
+    "color": "#15535f"
+  },
+  {
+    "id": "minecraft:calibrated_sculk_sensor",
+    "name": "Calibrated Sculk Sensor",
+    "category": "redstone",
+    "color": "#1b6070"
+  },
+  {
+    "id": "minecraft:crafter",
+    "name": "Crafter",
+    "category": "redstone",
+    "color": "#7d756b"
+  },
+  {
+    "id": "minecraft:copper_bulb",
+    "name": "Copper Bulb",
+    "category": "redstone",
+    "color": "#b8734a"
   }
 ];
 
@@ -4890,10 +4998,14 @@ export const DEFAULT_BLOCK_ID = 'minecraft:stone';
 
 const BLOCK_BY_ID = new Map(BLOCKS.map(b => [b.id, b]));
 
+export function baseBlockId(id: string): string {
+  return String(id || 'minecraft:air').split('[')[0];
+}
+
 export function getBlockById(id: string): BlockDef {
-  return BLOCK_BY_ID.get(id) ?? BLOCKS[0];
+  return BLOCK_BY_ID.get(baseBlockId(id)) ?? BLOCKS[0];
 }
 
 export function isKnownBlock(id: string): boolean {
-  return BLOCK_BY_ID.has(id);
+  return BLOCK_BY_ID.has(baseBlockId(id));
 }

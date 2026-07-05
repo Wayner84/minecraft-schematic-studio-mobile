@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BLOCKS, getBlockById } from '../data/blockPalette';
+import { BLOCKS, baseBlockId, getBlockById } from '../data/blockPalette';
 import { findPng, pngToBitmap, readResourcePackZip, type PackPngMap } from './resourcePack';
 
 // Texture atlas.
@@ -27,7 +27,7 @@ let atlas: Atlas | null = null;
 let atlasSource: 'procedural' | 'resource-pack' = 'procedural';
 
 function blockName(blockId: string) {
-  return blockId.replace(/^minecraft:/, '');
+  return baseBlockId(blockId).replace(/^minecraft:/, '');
 }
 
 function tileId(blockId: string, face: BlockFace): TileId {
@@ -353,6 +353,7 @@ export function getTileUV(tile: TileId) {
 }
 
 export function tilesForBlock(blockId: string): { top: TileId; bottom: TileId; side: TileId } {
-  const id = getBlockById(blockId).id === 'minecraft:air' && blockId !== 'minecraft:air' ? 'minecraft:stone' : blockId;
+  const baseId = baseBlockId(blockId);
+  const id = getBlockById(baseId).id === 'minecraft:air' && baseId !== 'minecraft:air' ? 'minecraft:stone' : baseId;
   return { top: tileId(id, 'top'), bottom: tileId(id, 'bottom'), side: tileId(id, 'side') };
 }

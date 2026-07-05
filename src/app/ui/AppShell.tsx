@@ -86,6 +86,16 @@ export function AppShell() {
     showToast(`Opened ${file.name}`);
   }
 
+  async function openLitematicFile(file: File) {
+    const next = await importLitematic(file);
+    setEditorState(next);
+    setHistoryPast([]);
+    setHistoryFuture([]);
+    setY(0);
+    setScreen('editor');
+    showToast(`Imported ${file.name}`);
+  }
+
   async function loadPack(file: File) {
     const st = await loadResourcePackZip(file);
     setAtlasStatus(st);
@@ -173,7 +183,10 @@ export function AppShell() {
               Open design
               <input type="file" accept="application/json" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) void openJsonFile(f); e.currentTarget.value = ''; }} />
             </label>
-            <button className="startBtn disabled" disabled>Import Litematica (coming soon)</button>
+            <label className="startBtn">
+              Import Litematica
+              <input type="file" accept=".litematic,application/octet-stream" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) void openLitematicFile(f); e.currentTarget.value = ''; }} />
+            </label>
             <button className="startBtn" onClick={() => setScreen('settings')}>Settings</button>
           </div>
         </section>
@@ -209,8 +222,9 @@ export function AppShell() {
         if (!f) return;
         try {
           if (f.name.toLowerCase().endsWith('.zip')) await loadPack(f);
+          else if (f.name.toLowerCase().endsWith('.litematic')) await openLitematicFile(f);
           else if (f.name.toLowerCase().endsWith('.json')) await openJsonFile(f);
-          else showToast('Drop a resource pack .zip or design .json');
+          else showToast('Drop a resource pack .zip, design .json, or .litematic schematic');
         } catch { showToast('Could not load dropped file'); }
       }}
     >

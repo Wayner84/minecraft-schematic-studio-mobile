@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getBlockById } from '../data/blockPalette';
+import { baseBlockId, getBlockById } from '../data/blockPalette';
 import { getBlockPreviewImage } from '../view/blockPreview';
 import type { LayerEditorState } from './LayerEditor';
 
@@ -69,6 +69,39 @@ function cellsForTool(tool: DrawTool, start: { x: number; z: number }, end: { x:
     case 'pencil':
     default: return [{ x: end.x, z: end.z }];
   }
+}
+
+function withProps(id: string, props: Record<string, string>) {
+  const base = baseBlockId(id);
+  const body = Object.keys(props).sort().map(k => `${k}=${props[k]}`).join(',');
+  return body ? `${base}[${body}]` : base;
+}
+
+function isPairableChest(id: string) {
+  const base = baseBlockId(id);
+  return base === 'minecraft:chest' || base === 'minecraft:trapped_chest';
+}
+
+function updateChestPairing(layer: Map<CellKey, string>, x: number, z: number) {
+  const k = keyXZ(x, z);
+  const id = layer.get(k);
+  if (!id || !isPairableChest(id)) return;
+  const base = baseBlockId(id);
+  const left = layer.get(keyXZ(x - 1, z));
+  const right = layer.get(keyXZ(x + 1, z));
+  if (right && baseBlockId(right) === base && !left) {
+    layer.set(k, withProps(base, { facing: 'north', type: 'left', waterlogged: 'false' }));
+    layer.set(keyXZ(x + 1, z), withProps(base, { facing: 'north', type: 'right', waterlogged: 'false' }));
+  } else if (left && baseBlockId(left) === base && !right) {
+    layer.set(keyXZ(x - 1, z), withProps(base, { facing: 'north', type: 'left', waterlogged: 'false' }));
+    layer.set(k, withProps(base, { facing: 'north', type: 'right', waterlogged: 'false' }));
+  } else {
+    layer.set(k, withProps(base, { facing: 'north', type: 'single', waterlogged: 'false' }));
+  }
+}
+
+function refreshChestNeighbours(layer: Map<CellKey, string>, x: number, z: number) {
+  for (const [nx, nz] of [[x - 1, z], [x, z], [x + 1, z]] as Array<[number, number]>) updateChestPairing(layer, nx, nz);
 }
 
 export function EditorCanvas({
@@ -195,8 +228,13 @@ export function EditorCanvas({
       next.layers.set(y, m);
       for (const p of valid) {
         const k = keyXZ(p.x, p.z);
-        if (selected === 'minecraft:air') m.delete(k);
-        else m.set(k, selected);
+        if (selected === 'minecraft:air') {
+          m.delete(k);
+          refreshChestNeighbours(m, p.x, p.z);
+        } else {
+          m.set(k, isPairableChest(selected) ? withProps(selected, { facing: 'north', type: 'single', waterlogged: 'false' }) : selected);
+          if (isPairableChest(selected)) refreshChestNeighbours(m, p.x, p.z);
+        }
       }
       return next;
     });
