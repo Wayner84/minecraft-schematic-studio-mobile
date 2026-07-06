@@ -135,6 +135,7 @@ export function EditorCanvas({
 
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<null | { startDist: number; startScale: number; startMid: { x: number; y: number }; startOffset: { x: number; y: number } }>(null);
+  const panTimerRef = useRef<number | null>(null);
 
   const isPaintingRef = useRef(false);
   const lastPaint = useRef<{ x: number; z: number } | null>(null);
@@ -242,8 +243,60 @@ export function EditorCanvas({
 
   const canvasStyle = useMemo(() => ({ transform: `translate(${offset.x}px, ${offset.y}px) scale(${viewScale})`, transformOrigin: '0 0' }), [offset, viewScale]);
 
+  useEffect(() => () => {
+    if (panTimerRef.current !== null) window.clearInterval(panTimerRef.current);
+  }, []);
+
+  function stopControlEvent(e: React.PointerEvent | React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function zoomBy(delta: number) {
+    setViewScale(scale => Math.min(6, Math.max(0.6, Number((scale + delta).toFixed(2)))));
+  }
+
+  function panBy(dx: number, dy: number) {
+    setOffset(current => ({ x: current.x + dx, y: current.y + dy }));
+  }
+
+  function stopPanning() {
+    if (panTimerRef.current !== null) {
+      window.clearInterval(panTimerRef.current);
+      panTimerRef.current = null;
+    }
+  }
+
+  function startPanning(dx: number, dy: number) {
+    stopPanning();
+    panBy(dx, dy);
+    panTimerRef.current = window.setInterval(() => panBy(dx, dy), 80);
+  }
+
   return (
-    <div
+    <div className="canvasViewport">
+      <div
+        className="gridNavControls"
+        aria-label="Grid navigation controls"
+        onPointerDown={stopControlEvent}
+        onPointerMove={stopControlEvent}
+        onPointerUp={stopControlEvent}
+        onPointerCancel={stopControlEvent}
+        onClick={stopControlEvent}
+      >
+        <div className="gridZoomControls" aria-label="Grid zoom controls">
+          <button type="button" className="gridControlBtn" aria-label="Zoom in grid" title="Zoom in" onPointerDown={e => { stopControlEvent(e); zoomBy(0.2); }} onClick={stopControlEvent}>+</button>
+          <button type="button" className="gridControlBtn" aria-label="Zoom out grid" title="Zoom out" onPointerDown={e => { stopControlEvent(e); zoomBy(-0.2); }} onClick={stopControlEvent}>−</button>
+        </div>
+        <div className="gridJoystick" aria-label="Move grid controls">
+          <button type="button" className="gridControlBtn gridJoyUp" aria-label="Move grid up" title="Move grid up" onPointerDown={e => { stopControlEvent(e); startPanning(0, -28); }} onPointerUp={e => { stopControlEvent(e); stopPanning(); }} onPointerCancel={e => { stopControlEvent(e); stopPanning(); }} onPointerLeave={e => { stopControlEvent(e); stopPanning(); }}>▲</button>
+          <button type="button" className="gridControlBtn gridJoyLeft" aria-label="Move grid left" title="Move grid left" onPointerDown={e => { stopControlEvent(e); startPanning(-28, 0); }} onPointerUp={e => { stopControlEvent(e); stopPanning(); }} onPointerCancel={e => { stopControlEvent(e); stopPanning(); }} onPointerLeave={e => { stopControlEvent(e); stopPanning(); }}>◀</button>
+          <div className="gridJoyKnob" aria-hidden="true">✣</div>
+          <button type="button" className="gridControlBtn gridJoyRight" aria-label="Move grid right" title="Move grid right" onPointerDown={e => { stopControlEvent(e); startPanning(28, 0); }} onPointerUp={e => { stopControlEvent(e); stopPanning(); }} onPointerCancel={e => { stopControlEvent(e); stopPanning(); }} onPointerLeave={e => { stopControlEvent(e); stopPanning(); }}>▶</button>
+          <button type="button" className="gridControlBtn gridJoyDown" aria-label="Move grid down" title="Move grid down" onPointerDown={e => { stopControlEvent(e); startPanning(0, 28); }} onPointerUp={e => { stopControlEvent(e); stopPanning(); }} onPointerCancel={e => { stopControlEvent(e); stopPanning(); }} onPointerLeave={e => { stopControlEvent(e); stopPanning(); }}>▼</button>
+        </div>
+      </div>
+      <div
       ref={wrapRef}
       className="canvasWrap canvasGestures"
       onPointerDown={e => {
@@ -322,6 +375,7 @@ export function EditorCanvas({
       }}
     >
       <canvas ref={canvasRef} className="canvas" style={canvasStyle as any} />
+      </div>
     </div>
   );
 }
