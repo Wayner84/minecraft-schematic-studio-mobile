@@ -8,6 +8,7 @@ export type SaveFileOptions = {
 
 export type SaveFileResult = {
   uri?: string;
+  bytesWritten?: number;
 };
 
 type AndroidFileSaverPlugin = {
@@ -32,9 +33,13 @@ export async function saveBlobWithNativePicker(filename: string, blob: Blob): Pr
   if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') return null;
 
   const base64Data = await blobToBase64(blob);
-  return AndroidFileSaver.saveFile({
+  if (!base64Data) throw new Error('Cannot save an empty file');
+
+  const result = await AndroidFileSaver.saveFile({
     filename,
     mimeType: blob.type || 'application/octet-stream',
     base64Data,
   });
+  if (result.bytesWritten === 0) throw new Error('Saved file was empty');
+  return result;
 }
