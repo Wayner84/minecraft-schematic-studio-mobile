@@ -1,4 +1,4 @@
-import { downloadBlob, downloadJson, readJsonFile, clampY } from '../io/saveLoad';
+import { saveBlob, saveJson, readJsonFile, clampY } from '../io/saveLoad';
 import { exportLitematic, importLitematic } from '../io/litematic';
 import type { BuildFileAny, BuildFileV0, BuildFileV1, PlacedBlock } from '../io/saveLoad';
 import { EditorCanvas, type DrawTool } from './EditorCanvas';
@@ -208,7 +208,7 @@ export function LayerEditor({
         <div className="row" style={{ gap: 10 }}>
           <button
             className="btn primary"
-            onClick={() => downloadJson(`build-${Date.now()}.json`, exportBuildV1(state, 'Untitled build', 319))}
+            onClick={() => void saveJson(`build-${Date.now()}.json`, exportBuildV1(state, 'Untitled build', 319)).catch(() => undefined)}
           >
             Export JSON
           </button>
@@ -216,8 +216,12 @@ export function LayerEditor({
           <button
             className="btn"
             onClick={async () => {
-              const blob = await exportLitematic(state, 'Untitled build');
-              downloadBlob(`build-${Date.now()}.litematic`, blob);
+              try {
+                const blob = await exportLitematic(state, 'Untitled build');
+                await saveBlob(`build-${Date.now()}.litematic`, blob);
+              } catch {
+                // The Android document picker rejects when the user cancels; no UI action needed here.
+              }
             }}
           >
             Export .litematic

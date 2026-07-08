@@ -1,4 +1,5 @@
 import { WORLD_MAX_Y, WORLD_MIN_Y } from '../model/world';
+import { saveBlobWithNativePicker } from './nativeSave';
 
 export type PlacedBlock = { x: number; y: number; z: number; id: string; props?: Record<string, string | number | boolean> };
 
@@ -21,6 +22,33 @@ export type BuildFileV1 = {
 };
 
 export type BuildFileAny = BuildFileV0 | BuildFileV1;
+
+export async function saveJson(filename: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  await saveBlob(filename, blob);
+}
+
+export async function saveBlob(filename: string, blob: Blob) {
+  const nativeResult = await saveBlobWithNativePicker(filename, blob);
+  if (nativeResult) return;
+
+  const picker = (window as any).showSaveFilePicker;
+  if (picker) {
+    const handle = await picker({
+      suggestedName: filename,
+      types: [{
+        description: blob.type || 'File',
+        accept: { [blob.type || 'application/octet-stream']: [`.${filename.split('.').pop() || 'dat'}`] },
+      }],
+    });
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return;
+  }
+
+  downloadBlob(filename, blob);
+}
 
 export function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

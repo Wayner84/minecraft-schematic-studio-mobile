@@ -5,7 +5,7 @@ import { HotbarPalette } from './HotbarPalette';
 import { createEmptyEditorState } from '../model/editorState';
 import { DEFAULT_BLOCK_ID, MINECRAFT_VERSION } from '../data/blockPalette';
 import { getAtlasStatus, loadResourcePackZip, resetAtlasToProcedural, type AtlasStatus } from '../view/atlas';
-import { downloadBlob, downloadJson, readJsonFile } from '../io/saveLoad';
+import { readJsonFile, saveBlob, saveJson } from '../io/saveLoad';
 import { exportLitematic, importLitematic } from '../io/litematic';
 import type { LayerEditorState } from './LayerEditor';
 import type { DrawTool } from './EditorCanvas';
@@ -250,8 +250,8 @@ export function AppShell() {
               <button className="btn" onClick={() => setScreen('settings')}>Settings</button>
             </div>
             <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-              <button className="btn primary" onClick={() => downloadJson(`build-${Date.now()}.json`, exportBuildV1(editorState, 'Untitled build', 319))}>Save JSON</button>
-              <button className="btn" onClick={async () => downloadBlob(`build-${Date.now()}.litematic`, await exportLitematic(editorState, 'Untitled build'))}>Export .litematic</button>
+              <button className="btn primary" onClick={async () => { try { await saveJson(`build-${Date.now()}.json`, exportBuildV1(editorState, 'Untitled build', 319)); showToast('Design saved'); setMenuOpen(false); } catch { showToast('Save cancelled or failed'); } }}>Save JSON</button>
+              <button className="btn" onClick={async () => { try { await saveBlob(`build-${Date.now()}.litematic`, await exportLitematic(editorState, 'Untitled build')); showToast('Litematic exported'); setMenuOpen(false); } catch { showToast('Export cancelled or failed'); } }}>Export .litematic</button>
               <label className="btn">Open JSON<input type="file" accept="application/json" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) void openJsonFile(f); e.currentTarget.value = ''; setMenuOpen(false); }} /></label>
               <label className="btn">Import .litematic<input type="file" accept=".litematic,application/octet-stream" style={{ display: 'none' }} onChange={async e => { const f = e.target.files?.[0]; if (!f) return; pushHistory(await importLitematic(f)); setY(0); setMenuOpen(false); e.currentTarget.value = ''; }} /></label>
             </div>
