@@ -5,6 +5,10 @@ import { getBlockPreviewStyle } from '../view/blockPreview';
 type Props = {
   selected: string;
   onSelect: (id: string) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 };
 
 const STORAGE_KEY = 'mss.hotbar.v2';
@@ -33,7 +37,7 @@ function normalizeHotbar(ids: string[]): string[] {
   return out.slice(0, SLOT_COUNT);
 }
 
-export function HotbarPalette({ selected, onSelect }: Props) {
+export function HotbarPalette({ selected, onSelect, onUndo, onRedo, canUndo, canRedo }: Props) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('all');
@@ -78,7 +82,12 @@ export function HotbarPalette({ selected, onSelect }: Props) {
   return (
     <>
       <div className="hotbar" role="toolbar" aria-label="Block hotbar">
-        <div className="hotbarSlots" role="group" aria-label="10 editable quick slots">
+        <div className="hotbarHistory">
+          <button className="hotbarIconBtn" onClick={onUndo} disabled={!canUndo} aria-label="Undo">↶</button>
+          <button className="hotbarIconBtn" onClick={onRedo} disabled={!canRedo} aria-label="Redo">↷</button>
+        </div>
+
+        <div className="hotbarRail" role="group" aria-label="10 editable quick slots">
           {hotbar.map((id, i) => {
             const b = getBlockById(id);
             const active = id === selected;
@@ -98,6 +107,7 @@ export function HotbarPalette({ selected, onSelect }: Props) {
                 title={`${b.name} (long-press/right-click to change this quick slot)`}
               >
                 <span className="hotbarSwatch" style={getBlockPreviewStyle(id)} />
+                <span className="hotbarEditBadge" aria-hidden="true">✎</span>
                 <span className="hotbarIndex">{i + 1}</span>
               </button>
             );
@@ -116,6 +126,7 @@ export function HotbarPalette({ selected, onSelect }: Props) {
       {open && (
         <div className="modalOverlay" role="dialog" aria-modal="true" onClick={() => setOpen(false)}>
           <div className="modal blockPicker" onClick={e => e.stopPropagation()}>
+            <div className="sheetHandle" aria-hidden="true" />
             <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div className="title">{editSlot === null ? 'All blocks' : `Set quick slot ${editSlot + 1}`}</div>

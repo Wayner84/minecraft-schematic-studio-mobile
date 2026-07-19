@@ -2,6 +2,7 @@
 import { LayerEditor, exportBuildV1, importBuild } from './LayerEditor';
 import { Viewer3D } from './Viewer3D';
 import { HotbarPalette } from './HotbarPalette';
+import { useHoldRepeat } from './useHoldRepeat';
 import { createEmptyEditorState } from '../model/editorState';
 import { DEFAULT_BLOCK_ID, MINECRAFT_VERSION } from '../data/blockPalette';
 import { getAtlasStatus, loadResourcePackZip, resetAtlasToProcedural, type AtlasStatus } from '../view/atlas';
@@ -14,6 +15,11 @@ function cloneEditorState(s: LayerEditorState): LayerEditorState {
   const layers = new Map<number, Map<string, string>>();
   for (const [y, layer] of s.layers.entries()) layers.set(y, new Map(layer));
   return { sizeX: s.sizeX, sizeZ: s.sizeZ, layers };
+}
+
+function isEditorEmpty(s: LayerEditorState): boolean {
+  for (const layer of s.layers.values()) if (layer.size > 0) return false;
+  return true;
 }
 
 type Screen = 'start' | 'editor' | 'settings';
@@ -40,11 +46,18 @@ export function AppShell() {
   const [atlasStatus, setAtlasStatus] = useState<AtlasStatus>(() => getAtlasStatus());
   const [toast, setToast] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [layerSheetOpen, setLayerSheetOpen] = useState(false);
+  const [confirmNewDesignOpen, setConfirmNewDesignOpen] = useState(false);
+  const [hasEnteredEditor, setHasEnteredEditor] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('mss.theme', theme);
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    if (screen === 'editor') setHasEnteredEditor(true);
+  }, [screen]);
 
   const textureLabel = useMemo(() => atlasStatus.source === 'resource-pack' ? 'Texture pack loaded' : 'Demo textures', [atlasStatus.source]);
 
@@ -64,15 +77,22 @@ export function AppShell() {
     setEditorState(next);
   }
 
-  function newDesign() {
+  function performNewDesign() {
     setEditorState(createEmptyEditorState(128, 128));
     setHistoryPast([]);
     setHistoryFuture([]);
     setY(0);
     setSelected(DEFAULT_BLOCK_ID);
     setTool('pencil');
+    setConfirmNewDesignOpen(false);
     setScreen('editor');
     showToast('New 128 × 128 design created');
+  }
+
+  function requestNewDesign() {
+    // Only interrupt with a confirmation when there is actually something to lose.
+    if (isEditorEmpty(editorState)) performNewDesign();
+    else setConfirmNewDesignOpen(true);
   }
 
   async function openJsonFile(file: File) {
@@ -146,6 +166,14 @@ export function AppShell() {
     });
   }
 
+  function stepY(delta: number) {
+    setY(prev => Math.max(0, Math.min(319, prev + delta)));
+  }
+  const holdYMinus1 = useHoldRepeat(() => stepY(-1));
+  const holdYPlus1 = useHoldRepeat(() => stepY(1));
+  const holdYMinus10 = useHoldRepeat(() => stepY(-10));
+  const holdYPlus10 = useHoldRepeat(() => stepY(10));
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const t = e.target as HTMLElement | null;
@@ -170,6 +198,7 @@ export function AppShell() {
   }, [historyPast.length, historyFuture.length, editorState]);
 
   if (screen === 'start') {
+    const canResume = hasEnteredEditor && !isEditorEmpty(editorState);
     return (
       <div className={`app app-${theme} startScreen`}>
         {toast && <div className="toast">{toast}</div>}
@@ -178,7 +207,10 @@ export function AppShell() {
           <h1>Minecraft Schematic Studio</h1>
           <p className="muted">Mobile-first Java {MINECRAFT_VERSION} schematic sketching: 3D viewer on top, layer grid underneath.</p>
           <div className="startActions">
-            <button className="startBtn primary" onClick={newDesign}>New design</button>
+            {canResume && (
+              <button className="startBtn primary" onClick={() => setScreen('editor')}>↩ Continue editing</button>
+            )}
+            <button className={canResume ? 'startBtn' : 'startBtn primary'} onClick={requestNewDesign}>New design</button>
             <label className="startBtn">
               Open design
               <input type="file" accept="application/json" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) void openJsonFile(f); e.currentTarget.value = ''; }} />
@@ -190,6 +222,20 @@ export function AppShell() {
             <button className="startBtn" onClick={() => setScreen('settings')}>Settings</button>
           </div>
         </section>
+
+        {confirmNewDesignOpen && (
+          <div className="modalOverlay" role="dialog" aria-modal="true" onClick={() => setConfirmNewDesignOpen(false)}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <div className="sheetHandle" aria-hidden="true" />
+              <div className="title">Start a new design?</div>
+              <div className="muted">Your current build isn't saved anywhere yet. Starting a new one clears it and can't be undone.</div>
+              <div className="sheetActions">
+                <button className="btn" onClick={() => setConfirmNewDesignOpen(false)}>Cancel</button>
+                <button className="btn danger" onClick={performNewDesign}>Discard &amp; start new</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -242,18 +288,18 @@ export function AppShell() {
       {menuOpen && (
         <div className="modalOverlay" role="dialog" aria-modal="true" onClick={() => setMenuOpen(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="row" style={{ justifyContent: 'space-between' }}><div><div className="title">Menu</div><div className="muted">Save, load and quick settings</div></div><button className="btn" onClick={() => setMenuOpen(false)}>Close</button></div>
-            <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-              <button className={shadows ? 'btn primary' : 'btn'} onClick={() => setShadows(v => !v)}>{shadows ? 'Shadows: on' : 'Shadows: off'}</button>
-              <button className="btn" onClick={undo} disabled={!historyPast.length}>Undo</button>
-              <button className="btn" onClick={redo} disabled={!historyFuture.length}>Redo</button>
-              <button className="btn" onClick={() => setScreen('settings')}>Settings</button>
-            </div>
-            <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+            <div className="sheetHandle" aria-hidden="true" />
+            <div className="sheetHeader"><div><div className="title">Menu</div><div className="muted">Save, load and quick settings</div></div><button className="btn" onClick={() => setMenuOpen(false)}>Close</button></div>
+            <div className="sheetGrid">
               <button className="btn primary" onClick={async () => { try { await saveJson(`build-${Date.now()}.json`, exportBuildV1(editorState, 'Untitled build', 319)); showToast('Design saved'); setMenuOpen(false); } catch { showToast('Save cancelled or failed'); } }}>Save JSON</button>
               <button className="btn" onClick={async () => { try { await saveBlob(`build-${Date.now()}.litematic`, await exportLitematic(editorState, 'Untitled build')); showToast('Litematic exported'); setMenuOpen(false); } catch { showToast('Export cancelled or failed'); } }}>Export .litematic</button>
               <label className="btn">Open JSON<input type="file" accept="application/json" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) void openJsonFile(f); e.currentTarget.value = ''; setMenuOpen(false); }} /></label>
               <label className="btn">Import .litematic<input type="file" accept=".litematic,application/octet-stream" style={{ display: 'none' }} onChange={async e => { const f = e.target.files?.[0]; if (!f) return; pushHistory(await importLitematic(f)); setY(0); setMenuOpen(false); e.currentTarget.value = ''; }} /></label>
+            </div>
+            <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+              <button className={shadows ? 'btn primary' : 'btn'} onClick={() => setShadows(v => !v)}>{shadows ? 'Shadows: on' : 'Shadows: off'}</button>
+              <button className="btn" onClick={() => { setMenuOpen(false); setScreen('start'); }}>Home</button>
+              <button className="btn" onClick={() => { setMenuOpen(false); setScreen('settings'); }}>Settings</button>
             </div>
           </div>
         </div>
@@ -262,12 +308,48 @@ export function AppShell() {
       <div className="floatingStack left" aria-label="Layer controls">
         <div className="floatingCard">
           <div className="floatingTitle">Layer</div>
-          <input className="layerNumber" value={y} inputMode="numeric" onChange={e => setY(Math.max(0, Math.min(319, Number(e.target.value) || 0)))} />
-          <button className="floatingFab" onClick={() => setY(Math.max(0, y - 1))}>−</button>
-          <button className="floatingFab" onClick={() => setY(Math.min(319, y + 1))}>+</button>
+          <button className="layerNumber" onClick={() => setLayerSheetOpen(true)} aria-label={`Jump to layer, currently ${y}`}>{y}</button>
+          <button className="floatingFab" aria-label="Layer down" {...holdYMinus1}>−</button>
+          <button className="floatingFab" aria-label="Layer up" {...holdYPlus1}>+</button>
         </div>
       </div>
-      <div className="floatingStack right" aria-label="History controls"><button className="floatingFab" onClick={undo} disabled={!historyPast.length}>↶</button><button className="floatingFab" onClick={redo} disabled={!historyFuture.length}>↷</button></div>
+
+      {layerSheetOpen && (
+        <div className="modalOverlay" role="dialog" aria-modal="true" onClick={() => setLayerSheetOpen(false)}>
+          <div className="modal layerSheet" onClick={e => e.stopPropagation()}>
+            <div className="sheetHandle" aria-hidden="true" />
+            <div className="sheetHeader">
+              <div><div className="title">Jump to layer</div><div className="muted">Y 0–319 · ghost preview shows Y−1</div></div>
+              <button className="btn" onClick={() => setLayerSheetOpen(false)}>Done</button>
+            </div>
+            <div className="layerReadout">{y}</div>
+            <input
+              className="layerSlider"
+              type="range"
+              min={0}
+              max={319}
+              value={y}
+              onChange={e => setY(Number(e.target.value))}
+            />
+            <div className="layerQuickRow">
+              <button className="btn" {...holdYMinus10}>−10</button>
+              <button className="btn" {...holdYMinus1}>−1</button>
+              <input
+                className="input"
+                value={y}
+                inputMode="numeric"
+                onChange={e => setY(Math.max(0, Math.min(319, Number(e.target.value) || 0)))}
+              />
+              <button className="btn" {...holdYPlus1}>+1</button>
+              <button className="btn" {...holdYPlus10}>+10</button>
+            </div>
+            <div className="layerPresetRow">
+              <button className="btn" onClick={() => setY(0)}>Ground (Y 0)</button>
+              <button className="btn" onClick={() => setY(319)}>Build limit (Y 319)</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="main">
         <div className="splitLayout">
@@ -288,7 +370,14 @@ export function AppShell() {
               setCellPx={setCellPx}
             />
           </div>
-          <HotbarPalette selected={selected} onSelect={setSelected} />
+          <HotbarPalette
+            selected={selected}
+            onSelect={setSelected}
+            onUndo={undo}
+            onRedo={redo}
+            canUndo={historyPast.length > 0}
+            canRedo={historyFuture.length > 0}
+          />
         </div>
       </main>
     </div>
