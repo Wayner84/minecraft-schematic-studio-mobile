@@ -196,7 +196,12 @@ export function LayerEditor({
             </button>
           ))}
         </div>
-        <button className="btn" onClick={() => setSelected('minecraft:air')}>Eraser</button>
+        <button
+          className={selected === 'minecraft:air' ? 'btn eraserBtn active' : 'btn eraserBtn'}
+          onClick={() => setSelected('minecraft:air')}
+        >
+          Eraser
+        </button>
       </div>
 
       <div className="panel row desktopControls" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
