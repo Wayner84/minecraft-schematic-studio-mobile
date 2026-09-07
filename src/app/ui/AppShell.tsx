@@ -1,13 +1,14 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { LayerEditor, exportBuildV1, importBuild } from './LayerEditor';
+import { LayerEditor, exportBuildV1 } from './LayerEditor';
 import { Viewer3D } from './Viewer3D';
 import { HotbarPalette } from './HotbarPalette';
 import { useHoldRepeat } from './useHoldRepeat';
 import { createEmptyEditorState } from '../model/editorState';
 import { DEFAULT_BLOCK_ID, MINECRAFT_VERSION } from '../data/blockPalette';
 import { getAtlasStatus, loadResourcePackZip, resetAtlasToProcedural, type AtlasStatus } from '../view/atlas';
-import { readJsonFile, saveBlob, saveJson } from '../io/saveLoad';
-import { exportLitematic, importLitematic } from '../io/litematic';
+import { saveBlob, saveJson } from '../io/saveLoad';
+import { exportLitematic } from '../io/litematic';
+import { readDesign, runFileAction } from '../io/fileActions';
 import type { LayerEditorState } from './LayerEditor';
 import type { DrawTool } from './EditorCanvas';
 
@@ -96,24 +97,18 @@ export function AppShell() {
   }
 
   async function openJsonFile(file: File) {
-    const json = await readJsonFile(file);
-    const next = importBuild(json);
-    setEditorState(next);
-    setHistoryPast([]);
-    setHistoryFuture([]);
-    setY(0);
-    setScreen('editor');
-    showToast(`Opened ${file.name}`);
+    await runFileAction(async () => {
+      const next = await readDesign(file);
+      if (!next) return;
+      pushHistory(next);
+      setY(0);
+      setScreen('editor');
+      showToast(`Opened ${file.name} · Undo restores the previous design`);
+    });
   }
 
   async function openLitematicFile(file: File) {
-    const next = await importLitematic(file);
-    setEditorState(next);
-    setHistoryPast([]);
-    setHistoryFuture([]);
-    setY(0);
-    setScreen('editor');
-    showToast(`Imported ${file.name}`);
+    await openJsonFile(file);
   }
 
   async function loadPack(file: File) {
@@ -143,27 +138,17 @@ export function AppShell() {
   }
 
   function undo() {
-    setHistoryPast(prevPast => {
-      if (prevPast.length === 0) return prevPast;
-      const copy = prevPast.slice();
-      const prevState = copy.pop()!;
-      setHistoryFuture(f => [cloneEditorState(editorState), ...f].slice(0, 50));
-      setEditorState(prevState);
-      return copy;
-    });
+    if (!historyPast.length) return;
+    setHistoryFuture([cloneEditorState(editorState), ...historyFuture].slice(0, 50));
+    setEditorState(historyPast[historyPast.length - 1]);
+    setHistoryPast(historyPast.slice(0, -1));
   }
 
   function redo() {
-    setHistoryFuture(prevFuture => {
-      if (prevFuture.length === 0) return prevFuture;
-      const copy = prevFuture.slice();
-      const nextState = copy.shift()!;
-      setHistoryPast(p => {
-        const np = p.slice(); np.push(cloneEditorState(editorState)); while (np.length > 50) np.shift(); return np;
-      });
-      setEditorState(nextState);
-      return copy;
-    });
+    if (!historyFuture.length) return;
+    setHistoryPast([...historyPast, cloneEditorState(editorState)].slice(-50));
+    setEditorState(historyFuture[0]);
+    setHistoryFuture(historyFuture.slice(1));
   }
 
   function stepY(delta: number) {
@@ -291,10 +276,10 @@ export function AppShell() {
             <div className="sheetHandle" aria-hidden="true" />
             <div className="sheetHeader"><div><div className="title">Menu</div><div className="muted">Save, load and quick settings</div></div><button className="btn" onClick={() => setMenuOpen(false)}>Close</button></div>
             <div className="sheetGrid">
-              <button className="btn primary" onClick={async () => { try { await saveJson(`build-${Date.now()}.json`, exportBuildV1(editorState, 'Untitled build', 319)); showToast('Design saved'); setMenuOpen(false); } catch { showToast('Save cancelled or failed'); } }}>Save JSON</button>
-              <button className="btn" onClick={async () => { try { await saveBlob(`build-${Date.now()}.litematic`, await exportLitematic(editorState, 'Untitled build')); showToast('Litematic exported'); setMenuOpen(false); } catch { showToast('Export cancelled or failed'); } }}>Export .litematic</button>
+              <button className="btn primary" onClick={() => void runFileAction(async () => { await saveJson(`build-${Date.now()}.json`, exportBuildV1(editorState, 'Untitled build', 319)); showToast('Design saved'); setMenuOpen(false); })}>Save JSON</button>
+              <button className="btn" onClick={() => void runFileAction(async () => { await saveBlob(`build-${Date.now()}.litematic`, await exportLitematic(editorState, 'Untitled build')); showToast('Litematic exported'); setMenuOpen(false); })}>Export .litematic</button>
               <label className="btn">Open JSON<input type="file" accept="application/json" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) void openJsonFile(f); e.currentTarget.value = ''; setMenuOpen(false); }} /></label>
-              <label className="btn">Import .litematic<input type="file" accept=".litematic,application/octet-stream" style={{ display: 'none' }} onChange={async e => { const f = e.target.files?.[0]; if (!f) return; pushHistory(await importLitematic(f)); setY(0); setMenuOpen(false); e.currentTarget.value = ''; }} /></label>
+              <label className="btn">Import .litematic<input type="file" accept=".litematic,application/octet-stream" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; e.currentTarget.value = ''; if (f) void openLitematicFile(f); setMenuOpen(false); }} /></label>
             </div>
             <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
               <button className={shadows ? 'btn primary' : 'btn'} onClick={() => setShadows(v => !v)}>{shadows ? 'Shadows: on' : 'Shadows: off'}</button>

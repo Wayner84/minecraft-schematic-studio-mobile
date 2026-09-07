@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { baseBlockId, getBlockById } from '../data/blockPalette';
+import { getBlockById } from '../data/blockPalette';
+import { variantIndicator, withVariantDefaults } from '../model/blockState';
 import { getBlockPreviewImage } from '../view/blockPreview';
 import type { LayerEditorState } from './LayerEditor';
 
@@ -8,14 +9,7 @@ export type DrawTool = 'pencil' | 'line' | 'rectangle' | 'filled-rectangle' | 'c
 type CellKey = string;
 const keyXZ = (x: number, z: number): CellKey => `${x},${z}`;
 
-function getLayerMap(state: LayerEditorState, y: number): Map<CellKey, string> {
-  let m = state.layers.get(y);
-  if (!m) {
-    m = new Map();
-    state.layers.set(y, m);
-  }
-  return m;
-}
+
 
 function lineCells(x0: number, z0: number, x1: number, z1: number) {
   const cells: Array<{ x: number; z: number }> = [];
@@ -71,38 +65,6 @@ function cellsForTool(tool: DrawTool, start: { x: number; z: number }, end: { x:
   }
 }
 
-function withProps(id: string, props: Record<string, string>) {
-  const base = baseBlockId(id);
-  const body = Object.keys(props).sort().map(k => `${k}=${props[k]}`).join(',');
-  return body ? `${base}[${body}]` : base;
-}
-
-function isPairableChest(id: string) {
-  const base = baseBlockId(id);
-  return base === 'minecraft:chest' || base === 'minecraft:trapped_chest';
-}
-
-function updateChestPairing(layer: Map<CellKey, string>, x: number, z: number) {
-  const k = keyXZ(x, z);
-  const id = layer.get(k);
-  if (!id || !isPairableChest(id)) return;
-  const base = baseBlockId(id);
-  const left = layer.get(keyXZ(x - 1, z));
-  const right = layer.get(keyXZ(x + 1, z));
-  if (right && baseBlockId(right) === base && !left) {
-    layer.set(k, withProps(base, { facing: 'north', type: 'left', waterlogged: 'false' }));
-    layer.set(keyXZ(x + 1, z), withProps(base, { facing: 'north', type: 'right', waterlogged: 'false' }));
-  } else if (left && baseBlockId(left) === base && !right) {
-    layer.set(keyXZ(x - 1, z), withProps(base, { facing: 'north', type: 'left', waterlogged: 'false' }));
-    layer.set(k, withProps(base, { facing: 'north', type: 'right', waterlogged: 'false' }));
-  } else {
-    layer.set(k, withProps(base, { facing: 'north', type: 'single', waterlogged: 'false' }));
-  }
-}
-
-function refreshChestNeighbours(layer: Map<CellKey, string>, x: number, z: number) {
-  for (const [nx, nz] of [[x - 1, z], [x, z], [x + 1, z]] as Array<[number, number]>) updateChestPairing(layer, nx, nz);
-}
 
 export function EditorCanvas({
   state,
@@ -137,6 +99,9 @@ export function EditorCanvas({
   const gesture = useRef<null | { startDist: number; startScale: number; startMid: { x: number; y: number }; startOffset: { x: number; y: number } }>(null);
   const panTimerRef = useRef<number | null>(null);
 
+  const [mode, setMode] = useState<'draw' | 'pan'>('draw');
+  const pending = useRef(new Map<string, { x: number; z: number }>());
+  const panStart = useRef<null | { x: number; y: number; offset: { x: number; y: number } }>(null);
   const isPaintingRef = useRef(false);
   const lastPaint = useRef<{ x: number; z: number } | null>(null);
   const shapeStart = useRef<{ x: number; z: number } | null>(null);
@@ -150,8 +115,13 @@ export function EditorCanvas({
 
     const w = state.sizeX * cellPx;
     const h = state.sizeZ * cellPx;
-    c.width = w;
-    c.height = h;
+    // Bound raster memory independently of logical grid size (large mobile imports).
+    const rasterScale = Math.min(1, 2048 / w, 2048 / h);
+    c.width = Math.ceil(w * rasterScale);
+    c.height = Math.ceil(h * rasterScale);
+    c.style.width = `${w}px`;
+    c.style.height = `${h}px`;
+    ctx.scale(rasterScale, rasterScale);
 
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = '#0b0f14';
@@ -170,6 +140,15 @@ export function EditorCanvas({
         drawCtx.fillStyle = b.color;
         drawCtx.fillRect(px, pz, cellPx, cellPx);
         if (img) img.onload = () => setImageTick(t => t + 1);
+      }
+      const indicator = variantIndicator(id);
+      if (indicator) {
+        drawCtx.fillStyle = '#101820';
+        drawCtx.fillRect(px + 1, pz + cellPx * 0.28, cellPx - 2, cellPx * 0.6);
+        drawCtx.fillStyle = '#fff';
+        drawCtx.font = `bold ${Math.max(2, cellPx * (indicator.length > 3 ? 0.3 : 0.48))}px sans-serif`;
+        drawCtx.textAlign = 'center'; drawCtx.textBaseline = 'middle';
+        drawCtx.fillText(indicator, px + cellPx / 2, pz + cellPx * 0.58, cellPx - 2);
       }
       drawCtx.globalAlpha = 1;
     }
@@ -190,6 +169,7 @@ export function EditorCanvas({
       }
     }
 
+    for (const p of pending.current.values()) drawBlock(p.x, p.z, selected, 0.72);
     if (shapeStart.current && shapeEnd.current && tool !== 'pencil') {
       const cells = cellsForTool(tool, shapeStart.current, shapeEnd.current);
       for (const p of cells) {
@@ -217,24 +197,23 @@ export function EditorCanvas({
     const localY = clientY - rect.top + wrap.scrollTop;
     const cx = (localX - offset.x) / viewScale;
     const cz = (localY - offset.y) / viewScale;
-    return { x: Math.floor(cx / cellPx), z: Math.floor(cz / cellPx) };
+    return { x: Math.max(-1, Math.min(state.sizeX, Math.floor(cx / cellPx))), z: Math.max(-1, Math.min(state.sizeZ, Math.floor(cz / cellPx))) };
   }
 
   function applyCells(cells: Array<{ x: number; z: number }>) {
     const valid = cells.filter(p => p.x >= 0 && p.z >= 0 && p.x < state.sizeX && p.z < state.sizeZ);
     if (!valid.length) return;
+    onBeginEdit?.();
     onChange(prev => {
       const next: LayerEditorState = { sizeX: prev.sizeX, sizeZ: prev.sizeZ, layers: new Map(prev.layers) };
-      const m = new Map(getLayerMap(prev, y));
+      const m = new Map(prev.layers.get(y));
       next.layers.set(y, m);
       for (const p of valid) {
         const k = keyXZ(p.x, p.z);
         if (selected === 'minecraft:air') {
           m.delete(k);
-          refreshChestNeighbours(m, p.x, p.z);
         } else {
-          m.set(k, isPairableChest(selected) ? withProps(selected, { facing: 'north', type: 'single', waterlogged: 'false' }) : selected);
-          if (isPairableChest(selected)) refreshChestNeighbours(m, p.x, p.z);
+          m.set(k, withVariantDefaults(selected));
         }
       }
       return next;
@@ -243,17 +222,49 @@ export function EditorCanvas({
 
   const canvasStyle = useMemo(() => ({ transform: `translate(${offset.x}px, ${offset.y}px) scale(${viewScale})`, transformOrigin: '0 0' }), [offset, viewScale]);
 
-  useEffect(() => () => {
-    if (panTimerRef.current !== null) window.clearInterval(panTimerRef.current);
+  useEffect(() => {
+    const cancel = () => {
+      pending.current.clear();
+      isPaintingRef.current = false;
+      lastPaint.current = shapeStart.current = shapeEnd.current = null;
+      panStart.current = null;
+      if (panTimerRef.current !== null) window.clearInterval(panTimerRef.current);
+      panTimerRef.current = null;
+      setImageTick(t => t + 1);
+    };
+    const outside = (event: PointerEvent) => { if (!wrapRef.current?.contains(event.target as Node)) cancel(); };
+    document.addEventListener('pointerdown', outside, true);
+    window.addEventListener('blur', cancel);
+    window.addEventListener('keydown', cancel);
+    return () => {
+      document.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('blur', cancel);
+      window.removeEventListener('keydown', cancel);
+      if (panTimerRef.current !== null) window.clearInterval(panTimerRef.current);
+    };
   }, []);
 
   function stopControlEvent(e: React.PointerEvent | React.MouseEvent) {
+    cancelStroke();
     e.preventDefault();
     e.stopPropagation();
   }
 
+  function cancelStroke() {
+    pending.current.clear();
+    isPaintingRef.current = false;
+    lastPaint.current = shapeStart.current = shapeEnd.current = null;
+    setImageTick(t => t + 1);
+  }
+
+  function queueCells(cells: Array<{ x: number; z: number }>) {
+    for (const p of cells) if (p.x >= 0 && p.z >= 0 && p.x < state.sizeX && p.z < state.sizeZ) pending.current.set(keyXZ(p.x, p.z), p);
+    setImageTick(t => t + 1);
+  }
+
   function zoomBy(delta: number) {
-    setViewScale(scale => Math.min(6, Math.max(0.6, Number((scale + delta).toFixed(2)))));
+    cancelStroke();
+    setViewScale(scale => Math.min(6, Math.max(0.05, Number((scale + delta).toFixed(2)))));
   }
 
   function panBy(dx: number, dy: number) {
@@ -274,6 +285,18 @@ export function EditorCanvas({
   }
 
   return (
+    <>
+    <div className="gridModeBar" role="toolbar" aria-label="Grid mode">
+      <button className="btn" aria-pressed={mode === 'draw'} onClick={() => { cancelStroke(); setMode('draw'); }}>Draw</button>
+      <button className="btn" aria-pressed={mode === 'pan'} onClick={() => { cancelStroke(); setMode('pan'); }}>Pan</button>
+      <button className="btn" onClick={() => {
+        cancelStroke();
+        const wrap = wrapRef.current!;
+        setViewScale(Math.max(0.05, Math.min(6, (wrap.clientWidth - 16) / (state.sizeX * cellPx), (wrap.clientHeight - 16) / (state.sizeZ * cellPx))));
+        setOffset({ x: 8, y: 8 });
+      }}>Fit grid</button>
+      <span className="muted">{mode === 'draw' ? 'Drag to preview; lift to paint. Two fingers pan/zoom.' : 'Drag to pan. Two fingers zoom. No painting.'}</span>
+    </div>
     <div className="canvasViewport">
       <div
         className="gridNavControls"
@@ -285,8 +308,8 @@ export function EditorCanvas({
         onClick={stopControlEvent}
       >
         <div className="gridZoomControls" aria-label="Grid zoom controls">
-          <button type="button" className="gridControlBtn" aria-label="Zoom in grid" title="Zoom in" onPointerDown={e => { stopControlEvent(e); zoomBy(0.2); }} onClick={stopControlEvent}>+</button>
-          <button type="button" className="gridControlBtn" aria-label="Zoom out grid" title="Zoom out" onPointerDown={e => { stopControlEvent(e); zoomBy(-0.2); }} onClick={stopControlEvent}>−</button>
+          <button type="button" className="gridControlBtn" aria-label="Zoom in grid" title="Zoom in" onClick={() => zoomBy(0.2)}>+</button>
+          <button type="button" className="gridControlBtn" aria-label="Zoom out grid" title="Zoom out" onClick={() => zoomBy(-0.2)}>−</button>
         </div>
         <div className="gridJoystick" aria-label="Move grid controls">
           <button type="button" className="gridControlBtn gridJoyUp" aria-label="Move grid up" title="Move grid up" onPointerDown={e => { stopControlEvent(e); startPanning(0, -28); }} onPointerUp={e => { stopControlEvent(e); stopPanning(); }} onPointerCancel={e => { stopControlEvent(e); stopPanning(); }} onPointerLeave={e => { stopControlEvent(e); stopPanning(); }}>▲</button>
@@ -299,27 +322,33 @@ export function EditorCanvas({
       <div
       ref={wrapRef}
       className="canvasWrap canvasGestures"
+      onContextMenu={e => e.preventDefault()}
       onPointerDown={e => {
-        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture?.(e.pointerId);
         pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.current.size >= 2) {
-          isPaintingRef.current = false;
-          lastPaint.current = null;
-          shapeStart.current = null;
-          shapeEnd.current = null;
+          cancelStroke();
+          panStart.current = null;
           const pts = Array.from(pointers.current.values());
           const dx = pts[0].x - pts[1].x;
           const dy = pts[0].y - pts[1].y;
-          const dist = Math.hypot(dx, dy);
+          const dist = Math.max(1, Math.hypot(dx, dy));
           const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
           gesture.current = { startDist: dist, startScale: viewScale, startMid: mid, startOffset: offset };
           return;
         }
-        onBeginEdit?.();
-        isPaintingRef.current = true;
+        if (gesture.current) return;
+        if (mode === 'pan') {
+          panStart.current = { x: e.clientX, y: e.clientY, offset };
+          return;
+        }
         const cell = wrapToCell(e.clientX, e.clientY);
+        if (cell.x < 0 || cell.z < 0 || cell.x >= state.sizeX || cell.z >= state.sizeZ) return;
+        isPaintingRef.current = true;
         if (tool === 'pencil') {
-          applyCells([cell]);
+          queueCells([cell]);
           lastPaint.current = cell;
         } else {
           shapeStart.current = cell;
@@ -336,9 +365,16 @@ export function EditorCanvas({
           const dy = pts[0].y - pts[1].y;
           const dist = Math.max(1, Math.hypot(dx, dy));
           const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-          const scale = Math.min(6, Math.max(0.6, gesture.current.startScale * (dist / gesture.current.startDist)));
+          const scale = Math.min(6, Math.max(0.05, gesture.current.startScale * (dist / gesture.current.startDist)));
           setViewScale(scale);
-          setOffset({ x: gesture.current.startOffset.x + (mid.x - gesture.current.startMid.x), y: gesture.current.startOffset.y + (mid.y - gesture.current.startMid.y) });
+          const rect = e.currentTarget.getBoundingClientRect();
+          const g = gesture.current, ratio = scale / g.startScale;
+          setOffset({ x: mid.x - rect.left - (g.startMid.x - rect.left - g.startOffset.x) * ratio, y: mid.y - rect.top - (g.startMid.y - rect.top - g.startOffset.y) * ratio });
+          return;
+        }
+        if (panStart.current) {
+          const p = panStart.current;
+          setOffset({ x: p.offset.x + e.clientX - p.x, y: p.offset.y + e.clientY - p.y });
           return;
         }
         if (!isPaintingRef.current) return;
@@ -346,7 +382,7 @@ export function EditorCanvas({
         if (tool === 'pencil') {
           const prev = lastPaint.current;
           if (!prev || prev.x !== cell.x || prev.z !== cell.z) {
-            applyCells([cell]);
+            queueCells(prev ? lineCells(prev.x, prev.z, cell.x, cell.z) : [cell]);
             lastPaint.current = cell;
           }
         } else {
@@ -355,27 +391,27 @@ export function EditorCanvas({
         }
       }}
       onPointerUp={e => {
+        if (!pointers.current.has(e.pointerId)) return;
         pointers.current.delete(e.pointerId);
-        if (tool !== 'pencil' && shapeStart.current && shapeEnd.current) {
-          applyCells(cellsForTool(tool, shapeStart.current, shapeEnd.current));
+        if (isPaintingRef.current && !gesture.current) {
+          if (tool === 'pencil') applyCells([...pending.current.values()]);
+          else if (shapeStart.current && shapeEnd.current) applyCells(cellsForTool(tool, shapeStart.current, shapeEnd.current));
         }
-        if (pointers.current.size < 2) gesture.current = null;
-        isPaintingRef.current = false;
-        lastPaint.current = null;
-        shapeStart.current = null;
-        shapeEnd.current = null;
+        if (!pointers.current.size) gesture.current = null;
+        panStart.current = null;
+        cancelStroke();
       }}
       onPointerCancel={e => {
         pointers.current.delete(e.pointerId);
-        gesture.current = null;
-        isPaintingRef.current = false;
-        lastPaint.current = null;
-        shapeStart.current = null;
-        shapeEnd.current = null;
+        if (!pointers.current.size) gesture.current = null;
+        panStart.current = null;
+        cancelStroke();
       }}
+      onLostPointerCapture={e => { pointers.current.delete(e.pointerId); if (!pointers.current.size) gesture.current = null; panStart.current = null; cancelStroke(); }}
     >
       <canvas ref={canvasRef} className="canvas" style={canvasStyle as any} />
       </div>
     </div>
+    </>
   );
 }

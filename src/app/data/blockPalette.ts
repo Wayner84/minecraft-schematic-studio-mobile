@@ -5003,7 +5003,8 @@ export function baseBlockId(id: string): string {
 }
 
 export function getBlockById(id: string): BlockDef {
-  return BLOCK_BY_ID.get(baseBlockId(id)) ?? BLOCKS[0];
+  const base = baseBlockId(id);
+  return BLOCK_BY_ID.get(base) ?? { id: base, name: base, category: 'misc', color: '#b56cb8' };
 }
 
 export function isKnownBlock(id: string): boolean {

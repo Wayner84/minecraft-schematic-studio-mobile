@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BLOCKS, baseBlockId, getBlockById } from '../data/blockPalette';
+import { BLOCKS, baseBlockId, getBlockById, isKnownBlock } from '../data/blockPalette';
 import { findPng, pngToBitmap, readResourcePackZip, type PackPngMap } from './resourcePack';
 
 // Texture atlas.
@@ -38,9 +38,22 @@ function isLogLike(name: string) {
   return /(^|_)(log|stem|hyphae)$/.test(name) || /_wood$/.test(name);
 }
 
-function textureNamesForFace(blockId: string, face: BlockFace): string[] {
+export function textureNamesForFace(blockId: string, face: BlockFace): string[] {
   const name = blockName(blockId);
   const names: string[] = [];
+
+  if (/_(slab|stairs)$/.test(name)) {
+    let material = name.replace(/_(slab|stairs)$/, '').replace(/^waxed_/, '');
+    if (material === 'petrified_oak') material = 'oak';
+    if (/^(oak|spruce|birch|jungle|acacia|dark_oak|pale_oak|cherry|mangrove|bamboo|crimson|warped)$/.test(material)) material += '_planks';
+    else if (material.endsWith('brick') || material.endsWith('tile')) material += 's';
+    if (material === 'quartz') return [face === 'top' ? 'quartz_block_top' : face === 'bottom' ? 'quartz_block_bottom' : 'quartz_block_side'];
+    if (material === 'smooth_quartz') return ['quartz_block_bottom'];
+    if (material === 'smooth_stone' && face === 'side') return ['smooth_stone_slab_side', 'smooth_stone'];
+    if (material === 'smooth_sandstone' || material === 'smooth_red_sandstone') return [material.replace('smooth_', '') + '_top'];
+    if (material.includes('sandstone')) return [face === 'side' ? material : material.replace('cut_', '') + (face === 'top' ? '_top' : '_bottom')];
+    return [material, name];
+  }
 
   if (name === 'grass_block') {
     if (face === 'top') names.push('grass_block_top');
@@ -354,6 +367,6 @@ export function getTileUV(tile: TileId) {
 
 export function tilesForBlock(blockId: string): { top: TileId; bottom: TileId; side: TileId } {
   const baseId = baseBlockId(blockId);
-  const id = getBlockById(baseId).id === 'minecraft:air' && baseId !== 'minecraft:air' ? 'minecraft:stone' : baseId;
+  const id = isKnownBlock(baseId) ? baseId : 'minecraft:stone';
   return { top: tileId(id, 'top'), bottom: tileId(id, 'bottom'), side: tileId(id, 'side') };
 }
