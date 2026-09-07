@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BLOCKS, DEFAULT_BLOCK_ID, getBlockById } from '../data/blockPalette';
 import { getBlockPreviewStyle } from '../view/blockPreview';
+import { variantIndicator, withVariantDefaults } from '../model/blockState';
 
 type Props = {
   selected: string;
@@ -62,7 +63,7 @@ export function HotbarPalette({ selected, onSelect, onUndo, onRedo, canUndo, can
   const categories = useMemo(() => ['all', ...Array.from(new Set(BLOCKS.map(b => b.category)))], []);
   const list = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return BLOCKS.filter(b => {
+    return [...new Map(BLOCKS.map(b => [b.id, b])).values()].filter(b => {
       if (category !== 'all' && b.category !== category) return false;
       if (!t) return true;
       return (b.name + ' ' + b.id + ' ' + b.category).toLowerCase().includes(t);
@@ -95,7 +96,7 @@ export function HotbarPalette({ selected, onSelect, onUndo, onRedo, canUndo, can
               <button
                 key={i}
                 className={active ? 'hotbarSlot active' : 'hotbarSlot'}
-                onClick={() => onSelect(id)}
+                onClick={() => onSelect(withVariantDefaults(id))}
                 onPointerDown={() => {
                   clearHold();
                   holdTimer.current = window.setTimeout(() => openForSlot(i), 520);
@@ -107,6 +108,7 @@ export function HotbarPalette({ selected, onSelect, onUndo, onRedo, canUndo, can
                 title={`${b.name} (long-press/right-click to change this quick slot)`}
               >
                 <span className="hotbarSwatch" style={getBlockPreviewStyle(id)} />
+                {variantIndicator(id) && <span className="variantBadge">{variantIndicator(id)}</span>}
                 <span className="hotbarEditBadge" aria-hidden="true">✎</span>
                 <span className="hotbarIndex">{i + 1}</span>
               </button>
@@ -146,6 +148,7 @@ export function HotbarPalette({ selected, onSelect, onUndo, onRedo, canUndo, can
               {list.map(b => (
                 <button
                   key={b.id}
+                  aria-label={b.name}
                   className={b.id === selected ? 'blockPick active' : 'blockPick'}
                   onClick={() => {
                     if (editSlot !== null) {
@@ -156,11 +159,12 @@ export function HotbarPalette({ selected, onSelect, onUndo, onRedo, canUndo, can
                       });
                       setEditSlot(null);
                     }
-                    onSelect(b.id);
+                    onSelect(withVariantDefaults(b.id));
                     setOpen(false);
                   }}
                 >
                   <span className="blockPickTex" style={getBlockPreviewStyle(b.id)} />
+                  {variantIndicator(b.id) && <span className="variantBadge">{variantIndicator(b.id)}</span>}
                   <span className="blockPickName">{b.name}</span>
                 </button>
               ))}

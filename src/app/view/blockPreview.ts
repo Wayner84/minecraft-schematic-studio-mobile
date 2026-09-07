@@ -1,7 +1,7 @@
 import type * as React from 'react';
-import { getBlockById } from '../data/blockPalette';
+import { baseBlockId, getBlockById } from '../data/blockPalette';
 import { findPng } from './resourcePack';
-import { getPackVersion, getResourcePack } from './atlas';
+import { getPackVersion, getResourcePack, textureNamesForFace } from './atlas';
 
 const objectUrls = new Map<string, string>();
 const imageCache = new Map<string, HTMLImageElement>();
@@ -17,11 +17,12 @@ function clearPackCachesIfNeeded() {
 }
 
 function blockName(id: string) {
-  return id.replace(/^minecraft:/, '');
+  return baseBlockId(id).replace(/^minecraft:/, '');
 }
 
 function previewTextureNames(id: string): string[] {
   const name = blockName(id);
+  if (/_(slab|stairs)$/.test(name)) return textureNamesForFace(id, 'top');
   const overrides: Record<string, string[]> = {
     grass_block: ['grass_block_top', 'grass_block_side'],
     dirt_path: ['dirt_path_top'],

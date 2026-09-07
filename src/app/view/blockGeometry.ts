@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { parseBlockStateString, withVariantDefaults } from '../model/blockState';
 import { baseBlockId } from '../data/blockPalette';
 import { getTileUV, tilesForBlock, type TileId } from './atlas';
 
@@ -78,6 +80,30 @@ function chestGeometry(blockId: string) {
   return chest;
 }
 
+function slabGeometry(state: string) {
+  const p = parseBlockStateString(withVariantDefaults(state)).properties!;
+  if (p.type === 'double') return uvBox(1, 1, 1, state);
+  return uvBox(1, 0.5, 1, state).translate(0, p.type === 'top' ? 0.25 : -0.25, 0);
+}
+
+function stairGeometry(state: string) {
+  const p = parseBlockStateString(withVariantDefaults(state)).properties!;
+  const top = p.half === 'top';
+  const boxes = [uvBox(1, 0.5, 1, state).translate(0, top ? 0.25 : -0.25, 0)];
+  // Minecraft facing points toward the high step: north is -Z, east is +X.
+  const [fx, fz] = ({ north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0] } as Record<string, number[]>)[p.facing] ?? [0, -1];
+  for (const x of [-0.25, 0.25]) for (const z of [-0.25, 0.25]) {
+    const front = x * fx + z * fz > 0;
+    const left = x * fz - z * fx > 0;
+    const side = p.shape.endsWith('left') ? left : !left;
+    const occupied = p.shape.startsWith('inner_') ? front || side : p.shape.startsWith('outer_') ? front && side : front;
+    if (occupied) boxes.push(uvBox(0.5, 0.5, 0.5, state).translate(x, top ? -0.25 : 0.25, z));
+  }
+  const geometry = mergeGeometries(boxes)!;
+  boxes.forEach(box => box.dispose());
+  return geometry;
+}
+
 export function getBlockGeometry(blockId: string) {
   const cached = cache.get(blockId);
   if (cached) return cached;
@@ -86,7 +112,9 @@ export function getBlockGeometry(blockId: string) {
   const name = id.replace(/^minecraft:/, '');
   let g: THREE.BufferGeometry;
 
-  if (name === 'redstone_wire' || name === 'tripwire') g = redstoneWireGeometry(id);
+  if (name.endsWith('_slab')) g = slabGeometry(blockId);
+  else if (name.endsWith('_stairs')) g = stairGeometry(blockId);
+  else if (name === 'redstone_wire' || name === 'tripwire') g = redstoneWireGeometry(id);
   else if (['repeater', 'comparator', 'daylight_detector'].includes(name)) g = repeaterLikeGeometry(id);
   else if (name.includes('torch')) g = torchGeometry(id);
   else if (name === 'lever' || name.includes('button') || name.includes('pressure_plate')) g = leverButtonPlateGeometry(id);

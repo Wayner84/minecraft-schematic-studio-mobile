@@ -17,6 +17,9 @@ Minecraft Schematic Studio is designed for players who want a simple way to plan
 - **Texture previews** — palette, grid, and 3D preview use texture-style rendering.
 - **Resource pack support** — load a Java resource pack `.zip` so blocks display using matching pack textures where available.
 - **Common drawing tools** — pencil, eraser, line, rectangle, filled rectangle, circle, and filled circle.
+- **Touch-first editing controls** — switch deliberately between Draw and Pan, pinch/pan without accidental block placement, fit the grid, and use comfortable 44 px controls.
+- **Undo and redo** — reverse complete drawing strokes without stepping through every touched cell.
+- **Proper slab and stair variants** — choose slab height/type and stair facing, half, and shape; variants are preserved in project files and Litematica exports.
 - **Quick palette + full block picker** — keep favourite blocks handy while still being able to search the full block list.
 - **Storage and redstone blocks included** — includes support for blocks such as chests, double-chest-style placement data, redstone components, rails, repeaters, comparators, buttons, levers, lamps, and other Java block states represented by the block palette.
 - **Save and reopen designs** — save native project files for continued editing.
@@ -77,7 +80,9 @@ For best results, use a resource pack that matches the Minecraft Java version yo
 
 ## Litematica notes
 
-The app supports importing and exporting `.litematic` files for practical schematic workflows. Because Minecraft blocks can carry many detailed states and tile-entity data, always check important builds in your normal Minecraft/Litematica setup before relying on them in survival or on a server.
+The app supports importing and exporting `.litematic` files for practical schematic workflows. Slab and stair block states are preserved. Minecraft entities, block entities (such as chest inventories), and scheduled block/fluid ticks are intentionally outside the editor's blocks-only model; imports containing them are refused with an explanation rather than silently discarding data. Overlapping regions and designs beyond the editor's safety limits are also rejected.
+
+Always keep the original file and check important exported builds in your normal Minecraft/Litematica setup before relying on them in survival or on a server.
 
 ## Support the project
 

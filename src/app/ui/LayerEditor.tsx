@@ -1,10 +1,13 @@
-import { saveBlob, saveJson, readJsonFile, clampY } from '../io/saveLoad';
-import { exportLitematic, importLitematic } from '../io/litematic';
-import type { BuildFileAny, BuildFileV0, BuildFileV1, PlacedBlock } from '../io/saveLoad';
+import { saveBlob, saveJson } from '../io/saveLoad';
+import { exportLitematic } from '../io/litematic';
+import { exportBuildV1 } from '../io/design';
+import { readDesign, runFileAction } from '../io/fileActions';
 import { EditorCanvas, type DrawTool } from './EditorCanvas';
+import { BlockVariantControls } from './BlockVariantControls';
+
 
 type CellKey = string; // "x,z"
-const keyXZ = (x: number, z: number): CellKey => `${x},${z}`;
+
 
 export type LayerEditorState = {
   sizeX: number;
@@ -13,117 +16,8 @@ export type LayerEditorState = {
   layers: Map<number, Map<CellKey, string>>;
 };
 
-// helpers moved into EditorCanvas
-
-// Legacy exporter kept for compatibility (not used by UI)
-export function exportBuildV0(state: LayerEditorState, name: string, heightMax: number): BuildFileV0 {
-  void state; void name; void heightMax;
-  const blocks: PlacedBlock[] = [];
-  for (const [y, layer] of state.layers.entries()) {
-    if (y < 0 || y > heightMax) continue;
-    for (const [k, id] of layer.entries()) {
-      const [xs, zs] = k.split(',');
-      blocks.push({ x: Number(xs), y, z: Number(zs), id });
-    }
-  }
-  return {
-    version: 0,
-    name,
-    size: { x: state.sizeX, y: heightMax + 1, z: state.sizeZ },
-    blocks,
-  };
-}
-
-export function exportBuildV1(state: LayerEditorState, name: string, heightMax: number): BuildFileV1 {
-  const palette: string[] = [];
-  const palIndex = new Map<string, number>();
-  const blocks: Array<[number, number, number, number]> = [];
-
-  function idx(id: string) {
-    let i = palIndex.get(id);
-    if (i == null) {
-      i = palette.length;
-      palette.push(id);
-      palIndex.set(id, i);
-    }
-    return i;
-  }
-
-  for (const [y, layer] of state.layers.entries()) {
-    if (y < 0 || y > heightMax) continue;
-    for (const [k, id] of layer.entries()) {
-      const [xs, zs] = k.split(',');
-      blocks.push([Number(xs), y, Number(zs), idx(id)]);
-    }
-  }
-
-  return {
-    version: 1,
-    name,
-    createdAt: new Date().toISOString(),
-    size: { x: state.sizeX, y: heightMax + 1, z: state.sizeZ },
-    palette,
-    blocks,
-  };
-}
-
-export function importBuild(file: BuildFileAny | any): LayerEditorState {
-  if (!file || typeof file !== 'object') throw new Error('Invalid file');
-
-  // v1 (palette-indexed)
-  if (file.version === 1) {
-    const f = file as BuildFileV1;
-    const sizeX = Number(f.size?.x ?? 128);
-    const sizeZ = Number(f.size?.z ?? 128);
-    const layers = new Map<number, Map<CellKey, string>>();
-
-    const palette: string[] = Array.isArray(f.palette) ? f.palette.map(String) : [];
-    const blocks: Array<[number, number, number, number]> = Array.isArray(f.blocks) ? f.blocks : [];
-
-    for (const b of blocks) {
-      const x = Number(b[0]);
-      const y = clampY(Number(b[1]));
-      const z = Number(b[2]);
-      const pi = Number(b[3]);
-      const id = palette[pi] ?? 'minecraft:air';
-      if (x < 0 || z < 0 || x >= sizeX || z >= sizeZ) continue;
-      let layer = layers.get(y);
-      if (!layer) {
-        layer = new Map();
-        layers.set(y, layer);
-      }
-      if (id !== 'minecraft:air') layer.set(keyXZ(x, z), id);
-    }
-
-    return { sizeX, sizeZ, layers };
-  }
-
-  // v0 (legacy)
-  if (file.version === 0) {
-    const f = file as BuildFileV0;
-    const sizeX = Number(f.size?.x ?? 128);
-    const sizeZ = Number(f.size?.z ?? 128);
-    const layers = new Map<number, Map<CellKey, string>>();
-
-    const blocks: PlacedBlock[] = Array.isArray(f.blocks) ? f.blocks : [];
-    for (const b of blocks) {
-      const x = Number(b.x), z = Number(b.z);
-      const y = clampY(Number(b.y));
-      const id = String(b.id || 'minecraft:air');
-      if (x < 0 || z < 0 || x >= sizeX || z >= sizeZ) continue;
-      let layer = layers.get(y);
-      if (!layer) {
-        layer = new Map();
-        layers.set(y, layer);
-      }
-      if (id !== 'minecraft:air') layer.set(keyXZ(x, z), id);
-    }
-
-    return { sizeX, sizeZ, layers };
-  }
-
-  throw new Error('Unsupported file version');
-}
+// Keep the original public imports working for older callers.
+export { exportBuildV0, exportBuildV1, importBuild } from '../io/design';
 
 export function LayerEditor({
   state,
@@ -153,16 +47,14 @@ export function LayerEditor({
   setCellPx: (n: number) => void;
 }) {
   async function onImportJsonFile(file: File) {
-    const json = await readJsonFile(file);
-    const next = importBuild(json);
-    onChange(next);
-    setY(0);
+    await runFileAction(async () => {
+      const next = await readDesign(file);
+      if (next) { onChange(next); setY(0); }
+    });
   }
 
   async function onImportLitematicFile(file: File) {
-    const next = await importLitematic(file);
-    onChange(next);
-    setY(0);
+    await onImportJsonFile(file);
   }
 
   return (
@@ -213,21 +105,17 @@ export function LayerEditor({
         <div className="row" style={{ gap: 10 }}>
           <button
             className="btn primary"
-            onClick={() => void saveJson(`build-${Date.now()}.json`, exportBuildV1(state, 'Untitled build', 319)).catch(() => undefined)}
+            onClick={() => void runFileAction(() => saveJson(`build-${Date.now()}.json`, exportBuildV1(state, 'Untitled build', 319)))}
           >
             Export JSON
           </button>
 
           <button
             className="btn"
-            onClick={async () => {
-              try {
+            onClick={() => void runFileAction(async () => {
                 const blob = await exportLitematic(state, 'Untitled build');
                 await saveBlob(`build-${Date.now()}.litematic`, blob);
-              } catch {
-                // The Android document picker rejects when the user cancels; no UI action needed here.
-              }
-            }}
+            })}
           >
             Export .litematic
           </button>
@@ -260,6 +148,7 @@ export function LayerEditor({
         </div>
       </div>
 
+      <BlockVariantControls selected={selected} onSelect={setSelected} />
       <EditorCanvas
         state={state}
         y={y}
@@ -272,7 +161,7 @@ export function LayerEditor({
       />
 
       <div className="muted" style={{ marginTop: 8 }}>
-        Tip: touch/drag to paint. Export a JSON file to share.
+        N ↑ (−Z) · E → (+X) · B bottom · T top · D double. Arrows face the high stair step; IL/IR inner, OL/OR outer corners. Zoom in to read cell indicators.
       </div>
     </div>
   );

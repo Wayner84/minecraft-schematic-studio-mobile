@@ -1,5 +1,6 @@
 import { WORLD_MAX_Y, WORLD_MIN_Y } from '../model/world';
 import { saveBlobWithNativePicker } from './nativeSave';
+import { MAX_FILE_BYTES } from '../model/designValidation';
 
 export type PlacedBlock = { x: number; y: number; z: number; id: string; props?: Record<string, string | number | boolean> };
 
@@ -67,6 +68,7 @@ export function downloadBlob(filename: string, blob: Blob) {
 }
 
 export async function readJsonFile(file: File): Promise<any> {
+  if (file.size > MAX_FILE_BYTES) throw new Error('Design file too large (64 MiB limit). Split the design before importing.');
   const text = await file.text();
   return JSON.parse(text);
 }
